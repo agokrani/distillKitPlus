@@ -7,7 +7,7 @@ import tensorflow as tf
 from datasets import load_from_disk, load_dataset as hf_load_dataset
 
 from components.config import load_config
-from components.formatters import comparison_format
+from components.formatters import get_formatter
 from components.models import setup_tokenizer, load_base_model, load_adapter
 
 def generate_logits_for_batch(model, sequences, max_seq_len, tokenizer):
@@ -37,13 +37,17 @@ def load_dataset(config):
         dataset = load_from_disk(config["dataset"]["name"])
     else: 
         dataset = hf_load_dataset(config["dataset"]["name"], split=config["dataset"]["split"])
+    
     tokenizer = setup_tokenizer(config["models"]["teacher"], config)
     
+    # Get format function from config or use default
+    format_function = config["dataset"].get("format_function", "default_format")
+    format_func = get_formatter(format_function, tokenizer)
+    
     dataset = dataset.map(
-        comparison_format(tokenizer),
+        format_func,
         batched=True,
     )
-    
     num_samples = config["dataset"]["num_samples"]
     select_range = config["dataset"].get("select_range")
     if num_samples:

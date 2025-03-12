@@ -5,8 +5,7 @@ from components.config import load_config
 from components.models import load_models
 from components.dataset import DistillationDataset
 from components.trainer import LogitsTrainer
-from components.formatters import comparison_format
-
+from components.formatters import get_formatter
 from trl import DataCollatorForCompletionOnlyLM, SFTConfig
 
 def train(config):    
@@ -25,13 +24,19 @@ def train(config):
     else: 
         teacher_vocab_size = student_model.config.vocab_size 
 
+    # Get format function from config or use default
+    format_function = config["dataset"].get("format_function", "default_format")
+    
+    # Get the formatter function
+    format_func = get_formatter(format_function, student_tokenizer)
+
     # Initialize dataset
     dataset = DistillationDataset(
         file_path=config["dataset"]["name"],
         tokenizer=student_tokenizer,
         max_seq_length=config["tokenizer"]["max_length"],
         teacher_vocab_size=teacher_vocab_size,
-        format_func=comparison_format(student_tokenizer),
+        format_func=format_func,
         split=config["dataset"]["split"],
         num_samples=config["dataset"]["num_samples"],
         select_range=config["dataset"].get("select_range"),

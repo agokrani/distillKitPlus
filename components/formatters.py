@@ -6,6 +6,16 @@ def format_for_tokenization(tokenizer) -> Callable:
         return {"text": examples["text"] if "text" in examples else examples}
     return format_func
 
+def default_format(tokenizer) -> Callable:
+    def format_func(examples: Dict[str, Any]) -> Dict[str, List[str]]:
+        texts = []
+        assert "messages" in examples.keys()
+        for i in range(len(examples["messages"])):
+            messages = examples["messages"][i]
+            texts.append(tokenizer.apply_chat_template(messages, tokenize=False))
+        return {"text": texts}
+    return format_func
+
 def comparison_format(tokenizer) -> Callable:
     """Format function for comparison-style datasets"""
     def format_func(examples: Dict[str, Any]) -> Dict[str, List[str]]:   
@@ -54,3 +64,27 @@ def sharegpt_format(tokenizer) -> Callable:
             texts.append(tokenizer.apply_chat_template(messages, tokenize=False))
         return {"text": texts}
     return format_func
+
+def get_formatter(format_function: str, tokenizer) -> Callable:
+    """
+    Returns the appropriate formatter function based on the provided format_function name
+    
+    Args:
+        format_function (str): Name of the formatter function to use
+        tokenizer: The tokenizer to pass to the formatter function
+        
+    Returns:
+        Callable: The selected formatter function
+    """
+    formatters = {
+        "default_format": default_format,
+        "comparison_format": comparison_format,
+        "sharegpt_format": sharegpt_format,
+        "format_for_tokenization": format_for_tokenization
+    }
+    
+    if format_function in formatters:
+        return formatters[format_function](tokenizer)
+    else:
+        print(f"Warning: Unknown formatter '{format_function}', falling back to default_format")
+        return default_format(tokenizer)

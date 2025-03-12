@@ -5,7 +5,8 @@
         "split": "train",
         "logits_file": "distillation_logits.tfrecord",
         "num_samples": 100,
-        "select_range": null
+        "select_range": null,
+        "format_function": null
     },
     "models": {
         "teacher": "meta-llama/Llama-3.1-70B-Instruct",
