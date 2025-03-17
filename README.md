@@ -10,6 +10,7 @@ DistillKit is an open-source toolkit for doing knowledge distillation (KLD). The
 - **Pre-Computed Logits**: Enables memory-efficient training by generating logits in advance.
 - **LoRA Fine-Tuning Integration**: Efficient low-rank adaptation fine-tuning support.
 - **Quantization Support**: 4-bit model quantization for faster inference and reduced memory usage.
+- **Accelerate & DeepSpeed Integration**: Support for distributed training with optimized memory usage.
 
 
 
@@ -31,15 +32,23 @@ pip install .
     python scripts/local/generate_logits.py --config config/default_config.json
     ```
 - Run distillation:
+  
+  Without Accelerate (default):
     ```bash
     python scripts/local/distill_logits.py --config config/default_config.json
+    ```
+  
+  With Accelerate & DeepSpeed:
+    ```bash
+    # Make sure to set "use_accelerate": true in your config file
+    accelerate launch --config_file config/accelerate_configs/default_config.yaml scripts/local/distill_logits.py --config config/default_config.json
     ```
 
 ### Optional: Modal Integration
 
 DistillKitPlus also supports running scripts using **Modal**. Follow the steps below to perform knowledge distillation with Modal.
 
-Use the following command to generate pre-computed logits with Modal:
+Use the following commands with Modal:
 
 - Generate teacher logits:
     ```bash
@@ -49,6 +58,8 @@ Use the following command to generate pre-computed logits with Modal:
     ```bash
     python scripts/modal/distill_logits.py --config config/default_config.json
     ```
+
+When using Modal, the accelerate configuration is handled internally based on your config file settings. Just set `"use_accelerate": true` and specify `"accelerate_config"` in the `"execution"` section of your config file.
 
 ## Configuration
 
@@ -62,6 +73,7 @@ The toolkit uses a JSON configuration file with the following main sections:
 - `distillation`: Distillation-specific parameters (temperature, alpha)
 - `lora`: LoRA configuration for efficient fine-tuning
 - `quantization`: Model quantization settings
+- `execution`: Settings for accelerate and distributed training
 
 See `config/default_config.json` for a complete example.
 

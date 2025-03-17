@@ -9,3 +9,5 @@ bitsandbytes
 tensorflow
 tf-keras
 wheel
+py-cpuinfo
+deepspeed

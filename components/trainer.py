@@ -50,7 +50,7 @@ class LogitsTrainer(SFTTrainer):
         
         # Get student outputs
         student_outputs = student_model(**inputs)
-        
+    
         # Get teacher logits either from inputs or by computing them
         if teacher_logits is None:
             teacher_logits = self._compute_teacher_logits(inputs)
@@ -86,13 +86,8 @@ class LogitsTrainer(SFTTrainer):
         
         # Ensure teacher is on correct device
         self.teacher_model = self.teacher_model.to(self.model.device)
-        teacher_model = (
-            self.teacher_model.module 
-            if hasattr(self.teacher_model, 'module') 
-            else self.teacher_model
-        )
+        teacher_model = self.teacher_model.module if hasattr(self.teacher_model, 'module') else self.teacher_model
         
-        # Compute teacher outputs without gradient computation
         with torch.no_grad():
             teacher_outputs = teacher_model(**inputs)
             
@@ -177,6 +172,5 @@ class LogitsTrainer(SFTTrainer):
             F.softmax(teacher_logits_scaled, dim=-1),
             reduction='batchmean'
         ) * (self.temperature ** 2) / student_logits.size(1)
-        
         # Combine KL divergence loss with original task loss
         return self.alpha * kd_loss + (1 - self.alpha) * original_loss

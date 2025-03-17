@@ -103,10 +103,12 @@ class DistillationDataset(Dataset):
         self.dataset = self.dataset.select(self.valid_indices)
         
         print(f"dataset length: {len(self.dataset)}")
-        assert hasattr(self, 'logits'), "Logits file not found."
         
-        print(f"logits length: {len(self.logits)}")
-        assert len(self.dataset) == len(self.logits), "Number of samples in dataset and logits file do not match."
+        if self.logits_file:
+            assert hasattr(self, 'logits'), "Logits file not found."
+        
+            print(f"logits length: {len(self.logits)}")
+            assert len(self.dataset) == len(self.logits), "Number of samples in dataset and logits file do not match."
 
     def _compute_valid_indices(self):
         self.valid_indices = []

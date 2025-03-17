@@ -1,6 +1,8 @@
 import os
 import argparse
 from pathlib import Path
+import deepspeed
+from accelerate import Accelerator
 from components.config import load_config
 from components.models import load_models
 from components.dataset import DistillationDataset
@@ -8,7 +10,14 @@ from components.trainer import LogitsTrainer
 from components.formatters import get_formatter
 from trl import DataCollatorForCompletionOnlyLM, SFTConfig
 
-def train(config):    
+def train(config):
+
+    use_accelerate = config.get("execution", {}).get("use_accelerate", False)
+    accelerator = None
+    
+    if use_accelerate:
+        accelerator = Accelerator()
+
     # Load models and tokenizer
     models = load_models(config)
     student_model = models["student_model"]
@@ -57,7 +66,7 @@ def train(config):
         tokenizer=student_tokenizer,
         args=training_args,
         data_collator=DataCollatorForCompletionOnlyLM(
-            "<|start_header_id|>assistant<|end_header_id|>\n\n",
+            "<|im_start|>assistant\n",
             tokenizer=student_tokenizer
         ),
         temperature=config["distillation"]["temperature"],
@@ -65,7 +74,15 @@ def train(config):
     )
 
     if teacher_model is not None:
+        if accelerator:
+            teacher_model = accelerator.prepare(teacher_model)
+            if accelerator.deepspeed_config["zero_optimization"]["stage"] == 3:
+                teacher_model, _, _, _ = deepspeed.initialize(model=teacher_model, config=accelerator.deepspeed_config)
         trainer.teacher_model = teacher_model
+        
+    
+    if accelerator:
+        trainer = accelerator.prepare(trainer)
 
     # Train and save
     trainer.train(resume_from_checkpoint=config["training"]["resume_from_checkpoint"])

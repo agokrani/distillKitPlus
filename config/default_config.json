@@ -61,5 +61,9 @@
     },
     "quantization": {
         "enabled": true
+    },
+    "execution": {
+        "use_accelerate": true,
+        "accelerate_config": null
     }
 }

@@ -6,7 +6,7 @@ from components.config import load_config
 
 
 VOL_MOUNT_PATH = Path("/vol")
-output_vol = modal.Volume.from_name("finetune-volume", create_if_missing=True)
+output_vol = modal.Volume.from_name("distillation-volume", create_if_missing=True)
 
 # Modal setup
 cuda_version = "12.4.0"
@@ -24,7 +24,7 @@ image = (
     ).run_commands("pip install flash-attn --no-build-isolation")
 )
 
-app = modal.App(name="llama3.1-70b28b-cot-distillation-wsdm", image=image)
+app = modal.App(name="generate-logits", image=image)
 
 @app.function(
     gpu=modal.gpu.A100(count=1, size="80GB"),

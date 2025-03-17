@@ -41,10 +41,12 @@ def get_model_kwargs(config: Dict[str, Any]) -> Dict[str, Any]:
     quant_storage_dtype = torch.bfloat16
 
     model_kwargs = {
-        "device_map": "auto",
         "token": config.get("hf_token"),
         "torch_dtype": quant_storage_dtype,
     }
+
+    if not config.get("use_accelerator", False):
+        model_kwargs["device_map"] = "auto"
 
     # Add quantization config if needed
     if config.get("quantization", {}).get("enabled", False):
