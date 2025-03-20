@@ -13,7 +13,7 @@ image = (
     .apt_install("git")
     .add_local_dir("scripts", "/root/scripts", copy=True)
     .pip_install(
-        "accelerate", "transformers", "torch", "datasets",
+        "accelerate", "transformers", "torch==2.5.1", "datasets",
         "tensorboard", "trl==0.12.2", "peft", "bitsandbytes",
         "wheel", "tensorflow", "h5py", "tf-keras", "deepspeed"
     ).run_commands("pip install flash-attn --no-build-isolation")

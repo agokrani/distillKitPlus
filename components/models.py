@@ -43,9 +43,10 @@ def get_model_kwargs(config: Dict[str, Any]) -> Dict[str, Any]:
     model_kwargs = {
         "token": config.get("hf_token"),
         "torch_dtype": quant_storage_dtype,
+        "trust_remote_code": config["models"].get("trust_remote_code", None),
     }
 
-    if not config.get("use_accelerator", False):
+    if not config["execution"].get("use_accelerator", False):
         model_kwargs["device_map"] = "auto"
 
     # Add quantization config if needed
@@ -111,14 +112,16 @@ def configure_lora(
     """
     if not config["lora"].get("enable_training", False):
         return None
-        
+    
+    modules_to_save = config["lora"].get("modules_to_save", [])
     lora_config = LoraConfig(
         r=config["lora"]["r"],
         lora_alpha=config["lora"]["alpha"],
         target_modules=config["lora"]["target_modules"],
         lora_dropout=config["lora"]["dropout"],
         bias=config["lora"]["bias"],
-        task_type=config["lora"]["task_type"]
+        task_type=config["lora"]["task_type"], 
+        modules_to_save=modules_to_save
     )
     
     return get_peft_model(model, lora_config)

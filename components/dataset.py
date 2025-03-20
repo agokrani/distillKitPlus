@@ -70,9 +70,12 @@ class DistillationDataset(Dataset):
 
         if self.split is None: 
             dataset = load_from_disk(file_path)
-        else: 
-            dataset = load_dataset(file_path, split=self.split)
-        
+        else:
+            if file_path.endswith((".json", ".jsonl")):
+                dataset = load_dataset("json", data_files=file_path, split=self.split)
+            else: 
+                dataset = load_dataset(file_path, split=self.split)
+            
         self.dataset = dataset.map(
             self.format_func,
             batched=True,
