@@ -46,7 +46,7 @@ def get_model_kwargs(config: Dict[str, Any]) -> Dict[str, Any]:
         "trust_remote_code": config["models"].get("trust_remote_code", None),
     }
 
-    if not config["execution"].get("use_accelerator", False):
+    if not config["execution"].get("use_accelerate", False):
         model_kwargs["device_map"] = "auto"
 
     # Add quantization config if needed
