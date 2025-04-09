@@ -35,9 +35,12 @@ def generate_logits_for_batch(model, sequences, max_seq_len, tokenizer):
 def load_dataset(config): 
     if config["dataset"]["split"] is None: 
         dataset = load_from_disk(config["dataset"]["name"])
-    else: 
-        dataset = hf_load_dataset(config["dataset"]["name"], split=config["dataset"]["split"])
-    
+    else:
+        if config["dataset"]["name"].endswith((".json", ".jsonl")):
+            dataset = hf_load_dataset("json", data_files=config["dataset"]["name"], split=config["dataset"]["split"])
+        else: 
+            dataset = hf_load_dataset(config["dataset"]["name"], split=config["dataset"]["split"])
+
     tokenizer = setup_tokenizer(config["models"]["teacher"], config)
     
     # Get format function from config or use default
