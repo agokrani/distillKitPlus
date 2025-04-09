@@ -57,6 +57,9 @@ def train(config):
         **config["training"],
         max_seq_length=config["tokenizer"]["max_length"],
         remove_unused_columns=False,
+        dataset_kwargs={
+            "skip_prepare_dataset": True,
+        }
     )
 
     # Initialize trainer

@@ -13,10 +13,12 @@ image = (
     .apt_install("git")
     .add_local_dir("scripts", "/root/scripts", copy=True)
     .pip_install(
-        "accelerate", "transformers", "torch==2.5.1", "datasets",
-        "tensorboard", "trl==0.12.2", "peft", "bitsandbytes",
-        "wheel", "tensorflow", "h5py", "tf-keras", "deepspeed"
-    ).run_commands("pip install flash-attn --no-build-isolation")
+        "accelerate", "transformers==4.49.0", "torch==2.5.1", "datasets",
+        "tensorboard", "trl==0.15.2", "bitsandbytes",
+        "wheel", "tensorflow", "h5py", "tf-keras", "deepspeed==0.16.4"
+    )
+    .pip_install("git+https://github.com/agokrani/peft.git@fix-for-modules-to-save-for-zero3#egg=peft")
+    .run_commands("pip install flash-attn --no-build-isolation")
 )
 
 app = modal.App(name="distill-logits", image=image)
