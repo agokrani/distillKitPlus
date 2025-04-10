@@ -1,9 +1,10 @@
 from typing import Dict, Any, Optional, Tuple, Union
 import torch
-import torch.nn.functional as F
 from trl import SFTTrainer
 from transformers import PreTrainedModel
 from torch import Tensor
+
+from components.loss import compute_distillation_loss
 
 class LogitsTrainer(SFTTrainer):
     """
@@ -15,6 +16,10 @@ class LogitsTrainer(SFTTrainer):
         """Initialize trainer with distillation parameters from config"""
         self.temperature = kwargs.pop("temperature", 2.0)
         self.alpha = kwargs.pop("alpha", 0.1)
+        self.loss_type = kwargs.pop("loss_type", "fkl")
+        self.student_temperature = kwargs.pop("student_temperature", self.temperature)
+        self.teacher_temperature = kwargs.pop("teacher_temperature", self.temperature)
+        self.skip_eos = kwargs.pop("skip_eos", False)
         super().__init__(*args, **kwargs)
 
     def compute_loss(
@@ -42,6 +47,10 @@ class LogitsTrainer(SFTTrainer):
             for k, v in inputs.items()
         }
         
+        # Store the current inputs for accessing labels in _compute_distillation_loss
+        # Create a shallow copy to avoid modifying the original
+        self.current_inputs = {k: v for k, v in inputs.items()}
+        
         # Extract teacher logits if present
         teacher_logits = inputs.pop('logits') if 'logits' in inputs else None
         
@@ -65,7 +74,8 @@ class LogitsTrainer(SFTTrainer):
         custom_loss = self._compute_distillation_loss(
             student_outputs.logits,
             teacher_logits,
-            student_outputs.loss
+            student_outputs.loss,
+            labels=inputs['labels'] if self.loss_type == "uld" else None
         )
         
         return (custom_loss, student_outputs) if return_outputs else custom_loss
@@ -123,7 +133,8 @@ class LogitsTrainer(SFTTrainer):
         self,
         student_logits: Tensor,
         teacher_logits: Tensor,
-        original_loss: Tensor
+        original_loss: Tensor,
+        **kwargs,
     ) -> Tensor:
         """
         Compute the distillation loss combining KL divergence and original loss.
@@ -136,41 +147,13 @@ class LogitsTrainer(SFTTrainer):
         Returns:
             Combined loss tensor
         """
-        # Scale logits by temperature
-        student_logits_scaled = student_logits / self.temperature
-        teacher_logits_scaled = teacher_logits / self.temperature
-
-        # Handle vocabulary size mismatch
-        if teacher_logits_scaled.size(-1) > student_logits_scaled.size(-1):
-            # Truncate teacher vocab if larger than student's
-            teacher_logits_scaled = teacher_logits_scaled[
-                ..., 
-                :student_logits_scaled.size(-1)
-            ]
-        elif teacher_logits_scaled.size(-1) < student_logits_scaled.size(-1):
-            # Pad teacher logits with -inf if smaller than student's
-            padding_size = (
-                student_logits_scaled.size(-1) - teacher_logits_scaled.size(-1)
-            )
-            padding = torch.full(
-                (
-                    teacher_logits_scaled.size(0),
-                    teacher_logits_scaled.size(1),
-                    padding_size
-                ),
-                float('-inf'),
-                device=teacher_logits_scaled.device
-            )
-            teacher_logits_scaled = torch.cat(
-                [teacher_logits_scaled, padding],
-                dim=-1
-            )
-
-        # Compute KL divergence loss
-        kd_loss = F.kl_div(
-            F.log_softmax(student_logits_scaled, dim=-1),
-            F.softmax(teacher_logits_scaled, dim=-1),
-            reduction='batchmean'
-        ) * (self.temperature ** 2) / student_logits.size(1)
-        # Combine KL divergence loss with original task loss
-        return self.alpha * kd_loss + (1 - self.alpha) * original_loss
+        
+        return compute_distillation_loss(
+            student_logits,
+            teacher_logits,
+            original_loss,
+            loss_type=self.loss_type,
+            alpha=self.alpha,
+            temperature=self.temperature,
+            **kwargs
+        )

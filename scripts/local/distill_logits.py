@@ -73,7 +73,8 @@ def train(config):
             tokenizer=student_tokenizer
         ),
         temperature=config["distillation"]["temperature"],
-        alpha=config["distillation"]["alpha"]
+        alpha=config["distillation"]["alpha"], 
+        loss_type=config["distillation"]["loss_type"]
     )
 
     if teacher_model is not None:

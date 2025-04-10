@@ -37,7 +37,8 @@
     },
     "distillation": {
         "temperature": 2.0,
-        "alpha": 0.1
+        "alpha": 0.1, 
+        "loss_type": null
     },
     "model_config": {
         "use_flash_attention": true
