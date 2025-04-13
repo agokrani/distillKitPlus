@@ -33,14 +33,14 @@ image = (
         "git+https://github.com/agokrani/peft.git@fix-for-modules-to-save-for-zero3#egg=peft"
     )
     .run_commands("pip install flash-attn --no-build-isolation")
-    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})  # faster model transfers
+    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
 )
 
 app = modal.App(name="distill-logits", image=image)
 
 
 @app.function(
-    gpu=modal.gpu.A100(count=8, size="80GB"),
+    gpu="A100-80GB:8",
     timeout=86400,
     volumes={VOL_MOUNT_PATH: output_vol},
     secrets=[modal.Secret.from_name("huggingface-secret")],
