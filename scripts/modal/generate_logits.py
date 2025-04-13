@@ -18,36 +18,52 @@ image = (
     modal.Image.from_registry(f"nvidia/cuda:{tag}", add_python="3.11")
     .apt_install("git")
     .pip_install(
-        "accelerate", "transformers", "torch", "datasets",
-        "tensorboard", "trl==0.12.2", "peft", "bitsandbytes",
-        "wheel", "tensorflow", "h5py"
-    ).run_commands("pip install flash-attn --no-build-isolation")
+        "accelerate",
+        "transformers",
+        "torch",
+        "datasets",
+        "tensorboard",
+        "trl==0.12.2",
+        "peft",
+        "bitsandbytes",
+        "wheel",
+        "tensorflow",
+        "h5py",
+    )
+    .run_commands("pip install flash-attn --no-build-isolation")
 )
 
 app = modal.App(name="generate-logits", image=image)
+
 
 @app.function(
     gpu=modal.gpu.A100(count=1, size="80GB"),
     timeout=86400,
     volumes={VOL_MOUNT_PATH: output_vol},
-    secrets=[modal.Secret.from_name("huggingface-secret")]
+    secrets=[modal.Secret.from_name("huggingface-secret")],
 )
 def gen_logits_modal(config):
-    try: 
+    try:
         gen_logits(config)
     finally:
         output_vol.commit()
 
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default="config/default_config.json", help='Path to config file')
+    parser.add_argument(
+        "--config",
+        type=str,
+        default="config/default_config.json",
+        help="Path to config file",
+    )
     args = parser.parse_args()
-    
+
     config = load_config(args.config)  # Will load default if args.config is None
 
-    with app.run():    
+    with app.run():
         gen_logits_modal.remote(config)
+
 
 if __name__ == "__main__":
     main()
-
