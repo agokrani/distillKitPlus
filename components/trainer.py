@@ -3,6 +3,7 @@ import torch
 from trl import SFTTrainer
 from transformers import PreTrainedModel
 from torch import Tensor
+import torch.nn.functional as F
 
 from components.loss import compute_distillation_loss
 
@@ -142,15 +143,22 @@ class LogitsTrainer(SFTTrainer):
         Returns:
             Aligned teacher logits
         """
-        if teacher_logits.size(1) > student_logits.size(1):
+        teacher_len = teacher_logits.size(1)
+        student_len = student_logits.size(1)
+
+        if teacher_len > student_len:
             # Truncate teacher logits if longer than student's
-            return teacher_logits[:, : student_logits.size(1), :]
-        elif teacher_logits.size(1) < student_logits.size(1):
-            # This case shouldn't happen with proper dataset preparation
-            raise ValueError(
-                "Teacher sequence length shorter than student sequence length. "
-                "Check dataset preparation."
+            return teacher_logits[:, :student_len, :]
+        elif teacher_len < student_len:
+            # Pad teacher logits if shorter than student's
+            padding_needed = student_len - teacher_len
+            # Pad format: (pad_left, pad_right, pad_top, pad_bottom, pad_front, pad_back)
+            # We pad dim 1 (sequence length) at the end: (0, 0 for dim 2, 0, padding_needed for dim 1, 0, 0 for dim 0)
+            padding_tuple = (0, 0, 0, padding_needed, 0, 0)
+            padded_teacher_logits = F.pad(
+                teacher_logits, padding_tuple, mode='constant', value=0
             )
+            return padded_teacher_logits
         return teacher_logits
 
     def _compute_distillation_loss(

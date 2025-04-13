@@ -2,6 +2,8 @@ import os
 import sys
 import modal
 import subprocess
+import json
+import click
 from pathlib import Path
 from components.config import load_config
 
@@ -13,7 +15,6 @@ hf_cache_vol = modal.Volume.from_name("huggingface-cache", create_if_missing=Tru
 image = (
     modal.Image.from_registry("nvidia/cuda:12.4.0-devel-ubuntu22.04", add_python="3.11")
     .apt_install("git")
-    .add_local_dir("scripts", "/root/scripts", copy=True)
     .pip_install(
         "accelerate",
         "transformers==4.49.0",
@@ -33,6 +34,8 @@ image = (
         "git+https://github.com/agokrani/peft.git@fix-for-modules-to-save-for-zero3#egg=peft"
     )
     .run_commands("pip install flash-attn --no-build-isolation")
+    .pip_install("click")
+    .add_local_dir("scripts", "/root/scripts", copy=True)
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
 )
 
@@ -45,13 +48,15 @@ app = modal.App(name="distill-logits", image=image)
     volumes={VOL_MOUNT_PATH: output_vol},
     secrets=[modal.Secret.from_name("huggingface-secret")],
 )
-def train_modal(config):
+def train_modal(config_str: str):
+    # Parse the JSON string back into a dictionary
+    config = json.loads(config_str)
+
     # Get the path to the local distill_logits.py script
     local_script_path = "scripts/local/distill_logits.py"
 
     # Convert the config object back to a temporary file
     import tempfile
-    import json
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
         json.dump(config, f, indent=2)
@@ -74,7 +79,7 @@ def train_modal(config):
 
     # Execute the command
     print(f"Executing command: {' '.join(cmd)}")
-    subprocess.run(cmd)
+    subprocess.run(cmd, check=True)
 
     # Clean up the temporary config file
     os.unlink(temp_config_path)
@@ -83,23 +88,18 @@ def train_modal(config):
     output_vol.commit()
 
 
-def main():
-    import argparse
+@app.local_entrypoint()
+@click.option(
+    "--config",
+    default="config/default_config.json",
+    help="Path to config file",
+)
+def main(config: str):
+    # Load config using the path provided by click
+    loaded_config = load_config(config)
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--config",
-        type=str,
-        default="config/default_config.json",
-        help="Path to config file",
-    )
-    args = parser.parse_args()
+    # Serialize config to JSON string
+    config_str = json.dumps(loaded_config)
 
-    config = load_config(args.config)  # Will load default if args.config is None
-
-    with app.run():
-        train_modal.remote(config)
-
-
-if __name__ == "__main__":
-    main()
+    # Call the remote function directly
+    train_modal.remote(config_str)
