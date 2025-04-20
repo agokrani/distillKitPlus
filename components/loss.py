@@ -1,5 +1,6 @@
 from typing import Dict, Any
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
@@ -58,8 +59,50 @@ def forward_kl(
 
     return kd_loss
 
+def normalize(tensor: torch.Tensor) -> torch.Tensor: 
+    """
+    Normalize a tensor to the range [0, 1].
+    """
+    means = tensor.mean(dim=-1, keepdim=True)
+    stds = tensor.std(dim=-1, keepdim=True)
+    z_score_normalized = (tensor - means) / (stds + 0.0001)
+    return z_score_normalized
+    
+def sequence_level_sort_for_ot_loss(tensor: torch.Tensor) -> torch.Tensor:
+    sums = tensor.sum(dim=(0, 1))
+    sorted_indices = torch.argsort(sums, descending=True)
+    sorted_values = tensor[:, :, sorted_indices]
+    return sorted_values
 
-def uld_loss(
+
+# class Sinkhorn_seq(nn.Module):
+#     def __init__(self, temperature: float = 2.0):
+#         super().__init__()
+#         self.temperature = temperature
+           
+#     def sinkhorn_normalized(self,x, n_iters=20):
+#         for _ in range(n_iters):
+#             x = x / torch.sum(x, dim=1, keepdim=True)
+#             x = x / torch.sum(x, dim=0, keepdim=True)
+#         return x
+
+#     def sinkhorn_loss(self,x, y, epsilon=0.1, n_iters=10):
+#         Wxy = torch.cdist(x, y, p=1)  
+#         K = torch.exp(-Wxy / epsilon)  
+#         P = self.sinkhorn_normalized(K, n_iters)  
+#         return torch.sum(P * Wxy)  
+    
+#     def forward(self, y_s, y_t):
+#         softmax = nn.Softmax(dim=-1)
+#         p_s = softmax(y_s/self.temperature)
+#         p_t = softmax(y_t/self.temperature)
+        
+#         emd_loss = 0
+#         for i in range(p_s.shape[0]):
+#             emd_loss = 0.001*self.sinkhorn_loss(x=p_s[i],y=p_t[i])
+#         return emd_loss
+
+def multi_level_ot_loss(
     student_logits: torch.Tensor,
     teacher_logits: torch.Tensor,
     temperature: float = 2.0,
@@ -69,13 +112,13 @@ def uld_loss(
     **kwargs,
 ) -> torch.Tensor:
     """
-    Compute the Universal LogitDistillation (ULD) loss (vectorized v2).
-    Applies softmax to full logits, then gathers relevant probability spans.
-
+    Compute the Multi-Level Optimal Transport (MLOT) loss.
+    
     Args:
         student_logits (Tensor): shape (B, seq_length, vocab_size_student)
         teacher_logits (Tensor): shape (B, seq_length, vocab_size_teacher)
         temperature (float): Temperature scaling for softening distributions.
+        k (int): Number of top logits to consider for the loss.
         inputs (dict): Must contain:
             - "labels": Tensor of student labels, shape (B, seq_length)
             - "teacher_labels": Tensor of teacher labels, shape (B, seq_length)
@@ -122,13 +165,139 @@ def uld_loss(
     teacher_start = teacher_valid.int().argmax(dim=1)  # shape: (B,)
     # --- End start index computation ---
 
+    # Determine the maximum length needed for gathering (based on min lengths)
+    max_valid = (
+        valid_length.max().item() if B > 0 else 0
+    )  # maximum valid span length over the batch
+
+    if max_valid == 0:  # Handle batch with no overlapping valid tokens
+        return torch.tensor(
+            0.0, device=device, requires_grad=student_logits.requires_grad
+        )
+
+    # Create a relative index vector for the maximum valid span length.
+    rel_idx = torch.arange(max_valid, device=device).unsqueeze(
+        0
+    )  # (1, max_valid) -> expand to (B, max_valid) later
+
+    # Compute the absolute indices to gather for each sample.
+    student_indices = student_start.unsqueeze(1) + rel_idx  # shape: (B, max_valid)
+    teacher_indices = teacher_start.unsqueeze(1) + rel_idx  # shape: (B, max_valid)
+
+    # Clamp indices to prevent out-of-bounds errors (important!)
+    student_indices = student_indices.clamp(min=0, max=seq_len - 1)
+    teacher_indices = teacher_indices.clamp(min=0, max=seq_len - 1)
+
+    # Gather probability spans using the computed indices
+    # Indices need shape (B, max_valid, 1) to gather along dim 1
+    student_span_logits = torch.gather(
+        student_logits,
+        1,
+        student_indices.unsqueeze(-1).expand(B, max_valid, vocab_student),
+    )
+    teacher_span_logits = torch.gather(
+        teacher_logits,
+        1,
+        teacher_indices.unsqueeze(-1).expand(B, max_valid, vocab_teacher),
+    )
+    # Shape of gathered tensors: (B, max_valid, V)
+
     # Apply softmax with temperature scaling to FULL logits
-    student_probs_full = F.softmax(
-        student_logits / temperature, dim=-1
-    )  # (B, seq_len, V_s)
-    teacher_probs_full = F.softmax(
-        teacher_logits / temperature, dim=-1
-    )  # (B, seq_len, V_t)
+    student_span_probs = F.softmax(
+        student_span_logits / temperature, dim=-1
+    )  # (B, max_valid, V_s)
+    teacher_span_probs = F.softmax(
+        teacher_span_logits / temperature, dim=-1
+    )  # (B, max_valid, V_t)
+
+    sorted_student = torch.topk(student_span_probs, k=k, dim=-1, largest=True).values
+    sorted_teacher = torch.topk(teacher_span_probs, k=k, dim=-1, largest=True).values
+    
+    sorted_student = normalize(sorted_student)
+    sorted_teacher = normalize(sorted_teacher)
+
+    sorted_student = sequence_level_sort_for_ot_loss(sorted_student)
+    sorted_teacher = sequence_level_sort_for_ot_loss(sorted_teacher)
+    
+    if k > vocab_teacher:
+        sorted_teacher = F.pad(sorted_teacher, (0, k - vocab_teacher), value=0.0)
+        print(
+            f"Warning: k ({k}) is larger than vocab_teacher ({vocab_teacher}). Padding with zeros. k might be too large and could lead to OOM errors."
+        )
+    elif k > vocab_student:
+        sorted_student = F.pad(sorted_student, (0, k - vocab_student), value=0.0)
+        print(
+            f"Warning: k ({k}) is larger than vocab_student ({vocab_student}). Padding with zeros. k might be too large and could lead to OOM errors."
+        )
+
+    # Compute element-wise L1 difference over the vocabulary dimension.
+    l1_diff = torch.abs(sorted_student - sorted_teacher).sum(
+        dim=-1
+    )  # shape: (B, max_valid)
+
+def uld_loss(
+    student_logits: torch.Tensor,
+    teacher_logits: torch.Tensor,
+    temperature: float = 2.0,
+    k: int = 100,
+    inputs: dict = None,
+    ignore_index: int = -100,
+    **kwargs,
+) -> torch.Tensor:
+    """
+    Compute the Universal LogitDistillation (ULD) loss (vectorized v2).
+    Applies softmax to full logits, then gathers relevant probability spans.
+
+    Args:
+        student_logits (Tensor): shape (B, seq_length, vocab_size_student)
+        teacher_logits (Tensor): shape (B, seq_length, vocab_size_teacher)
+        temperature (float): Temperature scaling for softening distributions.
+        k (int): Number of top logits to consider for the loss.
+        inputs (dict): Must contain:
+            - "labels": Tensor of student labels, shape (B, seq_length)
+            - "teacher_labels": Tensor of teacher labels, shape (B, seq_length)
+        ignore_index (int): value used to denote masked tokens. Default is -100.
+        **kwargs: Additional arguments.
+
+    Returns:
+        Tensor: Mean ULD loss across the batch.
+    """
+    if inputs is None:
+        raise ValueError("`inputs` must be provided and include label information.")
+
+    student_labels = inputs.get("labels", None)
+    if student_labels is None:
+        raise ValueError(
+            "ULD loss requires 'labels' in inputs for student answer positions"
+        )
+    teacher_labels = inputs.get("teacher_labels", None)
+    if teacher_labels is None:
+        raise ValueError(
+            "ULD loss requires 'teacher_labels' in inputs for teacher answer positions"
+        )
+
+    B, seq_len, vocab_student = student_logits.shape
+    _, _, vocab_teacher = teacher_logits.shape
+    device = student_logits.device
+
+    # Compute boolean masks indicating valid tokens.
+    student_valid = student_labels != ignore_index  # shape: (B, seq_len)
+    teacher_valid = teacher_labels != ignore_index  # shape: (B, seq_len)
+
+    # Compute answer lengths: number of valid tokens per sample.
+    student_answer_length = student_valid.sum(dim=1)  # shape: (B,)
+    teacher_answer_length = teacher_valid.sum(dim=1)  # shape: (B,)
+
+    # Determine the valid (overlap) length per sample.
+    valid_length = torch.min(
+        student_answer_length, teacher_answer_length
+    )  # shape: (B,)
+
+    # --- Compute start indices (FIXED) ---
+    # Find the index of the first valid token. Handles all-padding case (returns 0).
+    student_start = student_valid.int().argmax(dim=1)  # shape: (B,)
+    teacher_start = teacher_valid.int().argmax(dim=1)  # shape: (B,)
+    # --- End start index computation ---
 
     # Determine the maximum length needed for gathering (based on min lengths)
     max_valid = (
@@ -155,30 +324,30 @@ def uld_loss(
 
     # Gather probability spans using the computed indices
     # Indices need shape (B, max_valid, 1) to gather along dim 1
-    student_span_probs = torch.gather(
-        student_probs_full,
+    student_span_logits = torch.gather(
+        student_logits,
         1,
         student_indices.unsqueeze(-1).expand(B, max_valid, vocab_student),
     )
-    teacher_span_probs = torch.gather(
-        teacher_probs_full,
+    teacher_span_logits = torch.gather(
+        teacher_logits,
         1,
         teacher_indices.unsqueeze(-1).expand(B, max_valid, vocab_teacher),
     )
     # Shape of gathered tensors: (B, max_valid, V)
 
+    # Apply softmax with temperature scaling to FULL logits
+    student_span_probs = F.softmax(
+        student_span_logits / temperature, dim=-1
+    )  # (B, max_valid, V_s)
+    teacher_span_probs = F.softmax(
+        teacher_span_logits / temperature, dim=-1
+    )  # (B, max_valid, V_t)
+
     # Sort probabilities along the vocabulary dimension.
     sorted_student = torch.topk(student_span_probs, k=k, dim=-1, largest=True).values
     sorted_teacher = torch.topk(teacher_span_probs, k=k, dim=-1, largest=True).values
-    # sorted_student = torch.sort(student_span_probs, dim=-1, descending=True)[0]
-    # sorted_teacher = torch.sort(teacher_span_probs, dim=-1, descending=True)[0]
-
-    # Handle vocabulary size mismatch: pad the smaller tensor along the vocab dimension.
-    # vocab_gap = vocab_student - vocab_teacher
-    # if vocab_gap > 0:
-    #    sorted_teacher = F.pad(sorted_teacher, (0, vocab_gap), value=0.0)
-    # elif vocab_gap < 0:
-    #    sorted_student = F.pad(sorted_student, (0, -vocab_gap), value=0.0)
+    
 
     if k > vocab_teacher:
         sorted_teacher = F.pad(sorted_teacher, (0, k - vocab_teacher), value=0.0)
