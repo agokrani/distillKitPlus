@@ -4,6 +4,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
+def KL_wo(y_s, y_t,T=1):
+    p_s = F.log_softmax(y_s/T, dim=-1)
+    p_t = F.softmax(y_t/T, dim=-1)
+    loss = -torch.sum(p_t * p_s, dim=-1).mean()
+    return loss
 
 def forward_kl(
     student_logits: Tensor,
@@ -75,32 +80,32 @@ def sequence_level_sort_for_ot_loss(tensor: torch.Tensor) -> torch.Tensor:
     return sorted_values
 
 
-# class Sinkhorn_seq(nn.Module):
-#     def __init__(self, temperature: float = 2.0):
-#         super().__init__()
-#         self.temperature = temperature
+class Sinkhorn_seq(nn.Module):
+    def __init__(self, temperature: float = 2.0):
+        super().__init__()
+        self.temperature = temperature
            
-#     def sinkhorn_normalized(self,x, n_iters=20):
-#         for _ in range(n_iters):
-#             x = x / torch.sum(x, dim=1, keepdim=True)
-#             x = x / torch.sum(x, dim=0, keepdim=True)
-#         return x
+    def sinkhorn_normalized(self,x, n_iters=20):
+        for _ in range(n_iters):
+            x = x / torch.sum(x, dim=1, keepdim=True)
+            x = x / torch.sum(x, dim=0, keepdim=True)
+        return x
 
-#     def sinkhorn_loss(self,x, y, epsilon=0.1, n_iters=10):
-#         Wxy = torch.cdist(x, y, p=1)  
-#         K = torch.exp(-Wxy / epsilon)  
-#         P = self.sinkhorn_normalized(K, n_iters)  
-#         return torch.sum(P * Wxy)  
+    def sinkhorn_loss(self,x, y, epsilon=0.1, n_iters=10):
+        Wxy = torch.cdist(x, y, p=1)  
+        K = torch.exp(-Wxy / epsilon)  
+        P = self.sinkhorn_normalized(K, n_iters)  
+        return torch.sum(P * Wxy)  
     
-#     def forward(self, y_s, y_t):
-#         softmax = nn.Softmax(dim=-1)
-#         p_s = softmax(y_s/self.temperature)
-#         p_t = softmax(y_t/self.temperature)
+    def forward(self, y_s, y_t):
+        softmax = nn.Softmax(dim=-1)
+        p_s = softmax(y_s/self.temperature)
+        p_t = softmax(y_t/self.temperature)
         
-#         emd_loss = 0
-#         for i in range(p_s.shape[0]):
-#             emd_loss = 0.001*self.sinkhorn_loss(x=p_s[i],y=p_t[i])
-#         return emd_loss
+        emd_loss = 0
+        for i in range(p_s.shape[0]):
+            emd_loss += 0.001*self.sinkhorn_loss(x=p_s[i],y=p_t[i])
+        return emd_loss
 
 def multi_level_ot_loss(
     student_logits: torch.Tensor,
@@ -234,6 +239,27 @@ def multi_level_ot_loss(
     l1_diff = torch.abs(sorted_student - sorted_teacher).sum(
         dim=-1
     )  # shape: (B, max_valid)
+    # Create a mask that selects only valid positions per sample (up to valid_length).
+    # Use the same rel_idx tensor (now shape (1, max_valid))
+    valid_mask = (rel_idx < valid_length.unsqueeze(1)).float()  # shape: (B, max_valid)
+
+    # Compute per-sample loss as the mean L1 difference over the valid positions.
+    # Avoid division by zero for samples where valid_length is 0
+    clamped_valid_length = torch.clamp(valid_length.float(), min=1.0)
+    sample_loss = (l1_diff * valid_mask).sum(dim=1) / clamped_valid_length
+
+    # Handle cases where original valid_length was 0 - loss should be 0
+    sample_loss = torch.where(
+        valid_length == 0, torch.zeros_like(sample_loss), sample_loss
+    )
+    sinkorn_loss = Sinkhorn_seq()
+
+    sample_loss=sample_loss + KL_wo(sorted_teacher,sorted_student) * 0.1 # HARD CODED BAD!!!!!
+    sample_loss=sample_loss.mean() + sinkorn_loss(sorted_teacher,sorted_student) * 0.1 # HARD CODED BAD!!!!!
+    
+    return sample_loss 
+    
+
 
 def uld_loss(
     student_logits: torch.Tensor,
@@ -380,7 +406,7 @@ def uld_loss(
     )
 
     # Average the loss over the batch.
-    distillation_loss = sample_loss.mean()
+    distillation_loss = sample_loss.mean() 
 
     return distillation_loss
 
