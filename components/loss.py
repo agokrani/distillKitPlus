@@ -120,13 +120,13 @@ def multi_level_ot_loss(
     Compute the Multi-Level Optimal Transport (MLOT) loss.
     
     Args:
-        student_logits (Tensor): shape (B, seq_length, vocab_size_student)
-        teacher_logits (Tensor): shape (B, seq_length, vocab_size_teacher)
+        student_logits (Tensor): shape (B, student_seq_length, vocab_size_student)
+        teacher_logits (Tensor): shape (B, teacher_seq_length, vocab_size_teacher)
         temperature (float): Temperature scaling for softening distributions.
         k (int): Number of top logits to consider for the loss.
         inputs (dict): Must contain:
-            - "labels": Tensor of student labels, shape (B, seq_length)
-            - "teacher_labels": Tensor of teacher labels, shape (B, seq_length)
+            - "labels": Tensor of student labels, shape (B, student_seq_length)
+            - "teacher_labels": Tensor of teacher labels, shape (B, teacher_seq_length)
         ignore_index (int): value used to denote masked tokens. Default is -100.
         **kwargs: Additional arguments.
 
@@ -147,13 +147,13 @@ def multi_level_ot_loss(
             "ULD loss requires 'teacher_labels' in inputs for teacher answer positions"
         )
 
-    B, seq_len, vocab_student = student_logits.shape
-    _, _, vocab_teacher = teacher_logits.shape
+    B, student_seq_len, vocab_student = student_logits.shape
+    _, teacher_seq_len, vocab_teacher = teacher_logits.shape
     device = student_logits.device
 
     # Compute boolean masks indicating valid tokens.
     student_valid = student_labels != ignore_index  # shape: (B, seq_len)
-    teacher_valid = teacher_labels != ignore_index  # shape: (B, seq_len)
+    teacher_valid = teacher_labels != ignore_index  # shape: (B, teacher_seq_len)
 
     # Compute answer lengths: number of valid tokens per sample.
     student_answer_length = student_valid.sum(dim=1)  # shape: (B,)
@@ -190,8 +190,8 @@ def multi_level_ot_loss(
     teacher_indices = teacher_start.unsqueeze(1) + rel_idx  # shape: (B, max_valid)
 
     # Clamp indices to prevent out-of-bounds errors (important!)
-    student_indices = student_indices.clamp(min=0, max=seq_len - 1)
-    teacher_indices = teacher_indices.clamp(min=0, max=seq_len - 1)
+    student_indices = student_indices.clamp(min=0, max=student_seq_len - 1)
+    teacher_indices = teacher_indices.clamp(min=0, max=teacher_seq_len - 1)
 
     # Gather probability spans using the computed indices
     # Indices need shape (B, max_valid, 1) to gather along dim 1
@@ -275,13 +275,13 @@ def uld_loss(
     Applies softmax to full logits, then gathers relevant probability spans.
 
     Args:
-        student_logits (Tensor): shape (B, seq_length, vocab_size_student)
-        teacher_logits (Tensor): shape (B, seq_length, vocab_size_teacher)
+        student_logits (Tensor): shape (B, student_seq_length, vocab_size_student)
+        teacher_logits (Tensor): shape (B, teacher_seq_length, vocab_size_teacher)
         temperature (float): Temperature scaling for softening distributions.
         k (int): Number of top logits to consider for the loss.
         inputs (dict): Must contain:
-            - "labels": Tensor of student labels, shape (B, seq_length)
-            - "teacher_labels": Tensor of teacher labels, shape (B, seq_length)
+            - "labels": Tensor of student labels, shape (B, student_seq_length)
+            - "teacher_labels": Tensor of teacher labels, shape (B, teacher_seq_length)
         ignore_index (int): value used to denote masked tokens. Default is -100.
         **kwargs: Additional arguments.
 
@@ -302,8 +302,8 @@ def uld_loss(
             "ULD loss requires 'teacher_labels' in inputs for teacher answer positions"
         )
 
-    B, seq_len, vocab_student = student_logits.shape
-    _, _, vocab_teacher = teacher_logits.shape
+    B, student_seq_len, vocab_student = student_logits.shape
+    _, teacher_seq_len, vocab_teacher = teacher_logits.shape
     device = student_logits.device
 
     # Compute boolean masks indicating valid tokens.
@@ -345,8 +345,8 @@ def uld_loss(
     teacher_indices = teacher_start.unsqueeze(1) + rel_idx  # shape: (B, max_valid)
 
     # Clamp indices to prevent out-of-bounds errors (important!)
-    student_indices = student_indices.clamp(min=0, max=seq_len - 1)
-    teacher_indices = teacher_indices.clamp(min=0, max=seq_len - 1)
+    student_indices = student_indices.clamp(min=0, max=student_seq_len - 1)
+    teacher_indices = teacher_indices.clamp(min=0, max=teacher_seq_len - 1)
 
     # Gather probability spans using the computed indices
     # Indices need shape (B, max_valid, 1) to gather along dim 1
@@ -443,6 +443,10 @@ def compute_distillation_loss(
     elif loss_type == "uld":
         # For ULD, we may have different parameters
         kd_loss = uld_loss(
+            student_logits, teacher_logits, temperature, k, inputs, **kwargs
+        )
+    elif loss_type == "multi-ot": 
+        multi_level_ot_loss(
             student_logits, teacher_logits, temperature, k, inputs, **kwargs
         )
     else:
