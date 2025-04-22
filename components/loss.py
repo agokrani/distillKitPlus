@@ -63,15 +63,6 @@ def forward_kl(
     )
 
     return kd_loss
-
-def normalize(tensor: torch.Tensor) -> torch.Tensor: 
-    """
-    Normalize a tensor to the range [0, 1].
-    """
-    means = tensor.mean(dim=-1, keepdim=True)
-    stds = tensor.std(dim=-1, keepdim=True)
-    z_score_normalized = (tensor - means) / (stds + 0.0001)
-    return z_score_normalized
     
 def sequence_level_sort_for_ot_loss(tensor: torch.Tensor) -> torch.Tensor:
     sums = tensor.sum(dim=(0, 1))
@@ -224,9 +215,6 @@ def multi_level_ot_loss(
     sorted_student = torch.topk(student_span_probs, k=k, dim=-1, largest=True).values
     sorted_teacher = torch.topk(teacher_span_probs, k=k, dim=-1, largest=True).values
     
-    sorted_student = normalize(sorted_student)
-    sorted_teacher = normalize(sorted_teacher)
-
     sorted_student = sequence_level_sort_for_ot_loss(sorted_student)
     sorted_teacher = sequence_level_sort_for_ot_loss(sorted_teacher)
     
@@ -253,20 +241,15 @@ def multi_level_ot_loss(
     # Avoid division by zero for samples where valid_length is 0
     clamped_valid_length = torch.clamp(valid_length.float(), min=1.0)
     sample_loss = (l1_diff * valid_mask).sum(dim=1) / clamped_valid_length
-    print(f"uld: {sample_loss}")
     # Handle cases where original valid_length was 0 - loss should be 0
     sample_loss = torch.where(
         valid_length == 0, torch.zeros_like(sample_loss), sample_loss
     )
     
     sinkorn_loss = Sinkhorn_seq()
-    log_loss = KL_wo(sorted_teacher,sorted_student) * 0.1 # HARD CODED BAD!!!!!
-    sample_loss=sample_loss + log_loss
-    print(f"log_loss: {log_loss}")
-
-    sk_loss = sinkorn_loss(sorted_teacher,sorted_student) * 0.1 # HARD CODED BAD!!!!!
-    print(f"sk_loss: {sk_loss}")
-    sample_loss=sample_loss.mean() + sk_loss
+    sample_loss=sample_loss + KL_wo(sorted_teacher,sorted_student) * 0.1 # HARD CODED BAD!!!!!
+    
+    sample_loss=sample_loss.mean() + sinkorn_loss(sorted_teacher,sorted_student) * 0.1 # HARD CODED BAD!!!!!
     
     return sample_loss
     
