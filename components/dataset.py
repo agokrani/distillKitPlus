@@ -90,9 +90,9 @@ class DistillationDataset(Dataset):
         self.teacher_data_collator = teacher_data_collator
         self.loss_type = loss_type
 
-        if self.loss_type == "uld" and self.teacher_tokenizer is None:
+        if self.loss_type in ("uld", "multi-ot") and self.teacher_tokenizer is None:
             raise ValueError(
-                "teacher_tokenizer must be provided when loss_type is 'uld'"
+                "teacher_tokenizer must be provided when loss_type is 'uld', 'multi-ot'"
             )
 
         if self.split is None:
@@ -108,7 +108,7 @@ class DistillationDataset(Dataset):
             batched=True,
         )
         # hack for to process text with teacher tokenizer
-        if self.loss_type == "uld":
+        if self.loss_type in ("uld", "multi-ot"):
             # Create teacher dataset and rename text column to teacher_text
             teacher_dataset = dataset.map(self.teacher_format_func, batched=True)
             teacher_dataset = teacher_dataset.rename_column("text", "teacher_text")
@@ -119,7 +119,7 @@ class DistillationDataset(Dataset):
             )
             # Free up memory by deleting teacher_dataset
             del teacher_dataset
-
+        
         self.dataset = self.dataset.map(self._tokenize, batched=True)
 
         if num_samples:
@@ -175,7 +175,7 @@ class DistillationDataset(Dataset):
             "input_ids": outputs["input_ids"],
             "attention_mask": outputs["attention_mask"],
         }
-        if self.loss_type == "uld" and self.teacher_tokenizer is not None:
+        if self.loss_type in ("uld", "multi-ot") and self.teacher_tokenizer is not None:
             assert "teacher_text" in element, "teacher_text column not found in dataset"
             teacher_outputs = self.teacher_tokenizer(
                 element["teacher_text"],
@@ -222,7 +222,7 @@ class DistillationDataset(Dataset):
             "attention_mask": self.dataset[index]["attention_mask"],
         }
 
-        if self.loss_type == "uld" and "teacher_input_ids" in self.dataset[index]:
+        if self.loss_type in ("uld", "multi-ot") and "teacher_input_ids" in self.dataset[index]:
             item["teacher_input_ids"] = self.dataset[index]["teacher_input_ids"]
             item["teacher_attention_mask"] = self.dataset[index][
                 "teacher_attention_mask"

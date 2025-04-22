@@ -92,8 +92,10 @@ class Sinkhorn_seq(nn.Module):
         return x
 
     def sinkhorn_loss(self,x, y, epsilon=0.1, n_iters=10):
+        x, y = x.float(), y.float()
         Wxy = torch.cdist(x, y, p=1)  
-        K = torch.exp(-Wxy / epsilon)  
+        K = torch.exp(-Wxy / epsilon)
+        
         P = self.sinkhorn_normalized(K, n_iters)  
         return torch.sum(P * Wxy)  
     
@@ -101,6 +103,7 @@ class Sinkhorn_seq(nn.Module):
         softmax = nn.Softmax(dim=-1)
         p_s = softmax(y_s/self.temperature)
         p_t = softmax(y_t/self.temperature)
+        
         
         emd_loss = 0
         for i in range(p_s.shape[0]):
@@ -149,8 +152,11 @@ def multi_level_ot_loss(
 
     B, student_seq_len, vocab_student = student_logits.shape
     _, teacher_seq_len, vocab_teacher = teacher_logits.shape
-    device = student_logits.device
+    # Ensure teacher logits use the same dtype as student
+    teacher_logits = teacher_logits.to(student_logits.dtype)
 
+    device = student_logits.device
+    
     # Compute boolean masks indicating valid tokens.
     student_valid = student_labels != ignore_index  # shape: (B, seq_len)
     teacher_valid = teacher_labels != ignore_index  # shape: (B, teacher_seq_len)
@@ -247,17 +253,22 @@ def multi_level_ot_loss(
     # Avoid division by zero for samples where valid_length is 0
     clamped_valid_length = torch.clamp(valid_length.float(), min=1.0)
     sample_loss = (l1_diff * valid_mask).sum(dim=1) / clamped_valid_length
-
+    print(f"uld: {sample_loss}")
     # Handle cases where original valid_length was 0 - loss should be 0
     sample_loss = torch.where(
         valid_length == 0, torch.zeros_like(sample_loss), sample_loss
     )
-    sinkorn_loss = Sinkhorn_seq()
-
-    sample_loss=sample_loss + KL_wo(sorted_teacher,sorted_student) * 0.1 # HARD CODED BAD!!!!!
-    sample_loss=sample_loss.mean() + sinkorn_loss(sorted_teacher,sorted_student) * 0.1 # HARD CODED BAD!!!!!
     
-    return sample_loss 
+    sinkorn_loss = Sinkhorn_seq()
+    log_loss = KL_wo(sorted_teacher,sorted_student) * 0.1 # HARD CODED BAD!!!!!
+    sample_loss=sample_loss + log_loss
+    print(f"log_loss: {log_loss}")
+
+    sk_loss = sinkorn_loss(sorted_teacher,sorted_student) * 0.1 # HARD CODED BAD!!!!!
+    print(f"sk_loss: {sk_loss}")
+    sample_loss=sample_loss.mean() + sk_loss
+    
+    return sample_loss
     
 
 
@@ -446,7 +457,7 @@ def compute_distillation_loss(
             student_logits, teacher_logits, temperature, k, inputs, **kwargs
         )
     elif loss_type == "multi-ot": 
-        multi_level_ot_loss(
+        kd_loss = multi_level_ot_loss(
             student_logits, teacher_logits, temperature, k, inputs, **kwargs
         )
     else:
