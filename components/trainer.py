@@ -1,7 +1,7 @@
 from typing import Dict, Any, Optional, Tuple, Union
 import torch
 from trl import SFTTrainer
-from transformers import PreTrainedModel
+from transformers import PreTrainedModel, TrainerState
 from torch import Tensor
 import torch.nn.functional as F
 
@@ -21,6 +21,8 @@ class LogitsTrainer(SFTTrainer):
         self.loss_type = kwargs.pop("loss_type", "fkl")
         # only used for uld loss
         self.k = kwargs.pop("k", 100)
+        # Store arbitrary kwargs for specific loss functions
+        self.distil_kwargs = kwargs.pop("distil_kwargs", {})
         self.student_temperature = kwargs.pop("student_temperature", self.temperature)
         self.teacher_temperature = kwargs.pop("teacher_temperature", self.temperature)
         self.skip_eos = kwargs.pop("skip_eos", False)
@@ -31,7 +33,6 @@ class LogitsTrainer(SFTTrainer):
         model: PreTrainedModel,
         inputs: Dict[str, Any],
         return_outputs: bool = False,
-        num_items_in_batch: Optional[int] = None,
     ) -> Union[Tensor, Tuple[Tensor, Any]]:
         """
         Compute the distillation loss combining KL divergence and original loss.
@@ -40,7 +41,6 @@ class LogitsTrainer(SFTTrainer):
             model: The student model
             inputs: Dictionary containing input tensors
             return_outputs: Whether to return model outputs along with loss
-            num_items_in_batch: Optional batch size override
 
         Returns:
             Loss tensor or tuple of (loss tensor, model outputs)
@@ -61,6 +61,7 @@ class LogitsTrainer(SFTTrainer):
         student_model = model.module if hasattr(model, "module") else model
 
         # Get student outputs
+        # Ensure labels are passed if they exist in inputs, required for original loss calculation
         student_outputs = student_model(**inputs)
 
         # Get teacher logits either from inputs or by computing them
@@ -74,11 +75,11 @@ class LogitsTrainer(SFTTrainer):
 
         # Compute combined loss
         custom_loss = self._compute_distillation_loss(
-            student_outputs.logits,
-            teacher_logits,
-            student_outputs.loss,
-            inputs=inputs,
-            labels=inputs["labels"] if self.loss_type == "uld" else None,
+            student_logits=student_outputs.logits,
+            teacher_logits=teacher_logits,
+            original_loss=student_outputs.loss, # Use the loss returned by the model
+            inputs=inputs, # Pass original inputs (might contain labels, mask etc.)
+            distil_kwargs=self.distil_kwargs # Pass the specific loss kwargs
         )
 
         return (custom_loss, student_outputs) if return_outputs else custom_loss
@@ -124,7 +125,14 @@ class LogitsTrainer(SFTTrainer):
             teacher_inputs["labels"] = self.current_inputs["teacher_labels"]
 
         # Use teacher-specific inputs if available, otherwise use regular inputs
-        final_inputs = teacher_inputs if has_teacher_inputs else inputs
+        # Important: Don't pass labels to teacher model if it's only for inference
+        final_input_keys = list(final_inputs.keys())
+        for key in final_input_keys:
+            if key == "labels":
+                 del final_inputs[key]
+
+        final_inputs = teacher_inputs if has_teacher_inputs else {k:v for k,v in inputs.items() if k != 'labels'} # Don't pass labels
+
         with torch.no_grad():
             teacher_outputs = teacher_model(**final_inputs)
 
@@ -155,6 +163,7 @@ class LogitsTrainer(SFTTrainer):
             # Pad format: (pad_left, pad_right, pad_top, pad_bottom, pad_front, pad_back)
             # We pad dim 1 (sequence length) at the end: (0, 0 for dim 2, 0, padding_needed for dim 1, 0, 0 for dim 0)
             padding_tuple = (0, 0, 0, padding_needed, 0, 0)
+            # Use -inf for padding logits typically, but 0 might be okay if softmax handles it. Check loss impl.
             padded_teacher_logits = F.pad(
                 teacher_logits, padding_tuple, mode='constant', value=0
             )
@@ -167,7 +176,7 @@ class LogitsTrainer(SFTTrainer):
         teacher_logits: Tensor,
         original_loss: Tensor,
         inputs: Dict[str, Any],
-        **kwargs,
+        distil_kwargs: Dict[str, Any], # Accept distil_kwargs dict
     ) -> Tensor:
         """
         Compute the distillation loss combining KL divergence and original loss.
@@ -176,19 +185,23 @@ class LogitsTrainer(SFTTrainer):
             student_logits: Logits from student model
             teacher_logits: Logits from teacher model
             original_loss: Original task loss
+            inputs: Dictionary of input data (contains mask, labels etc)
+            distil_kwargs: Dictionary of specific arguments for the loss constructor
 
         Returns:
             Combined loss tensor
         """
 
         return compute_distillation_loss(
-            student_logits,
-            teacher_logits,
-            original_loss,
+            student_logits=student_logits,
+            teacher_logits=teacher_logits,
+            original_loss=original_loss,
+            trainer_instance=self, # Pass the trainer instance
             inputs=inputs,
             loss_type=self.loss_type,
             k=self.k,
             alpha=self.alpha,
             temperature=self.temperature,
-            **kwargs,
+            distil_loss_weight=distil_kwargs.get("distil_loss_weight", 1.0), # Get weight from kwargs or default
+            **distil_kwargs, # Pass the rest of the specific kwargs
         )
