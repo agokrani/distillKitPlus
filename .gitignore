@@ -6,3 +6,5 @@ distillKitPlus.egg-info/*
 .vscode/
 config/configs_local.zip
 distiil
+modall/
+data/
