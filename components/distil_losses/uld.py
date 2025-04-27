@@ -2,7 +2,7 @@ from typing import Dict, Any
 import torch
 import torch.nn.functional as F
 from torch import Tensor
-from lightning import LightningModule # Although not directly used, keep for consistency?
+from transformers import Trainer
 
 from .base import DistilLoss
 
@@ -19,18 +19,18 @@ class ULD(DistilLoss):
 
     def forward(
         self,
-        lightning_module: LightningModule, # Keep signature consistent
-        logits: Tensor, # Renamed from student_logits
+        trainer_instance: Trainer,
+        logits: Tensor,
         teacher_logits: Tensor,
-        mask: Tensor, # Mask might not be directly used by ULD, but keep signature?
-        batch: Dict[str, Any], # Renamed from inputs
+        mask: Tensor,
+        batch: Dict[str, Any],
         **kwargs,
     ) -> Tensor:
         """
         Compute the Universal LogitDistillation (ULD) loss (vectorized v2).
 
         Args:
-            lightning_module (LightningModule): The Lightning module instance.
+            trainer_instance (Trainer): The HuggingFace Trainer instance.
             logits (Tensor): Student logits, shape (B, seq_length, vocab_size_student).
             teacher_logits (Tensor): Teacher logits, shape (B, seq_length, vocab_size_teacher).
             mask (Tensor): Attention mask (may not be directly used here but part of signature).

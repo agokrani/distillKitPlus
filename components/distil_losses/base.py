@@ -1,7 +1,7 @@
 from typing import Union, Dict
 import torch
 from torch import nn
-from lightning.pytorch import LightningModule
+from transformers import Trainer
 
 
 class DistilLoss(nn.Module):
@@ -10,7 +10,7 @@ class DistilLoss(nn.Module):
 
     def forward(
         self,
-        lightning_module: LightningModule,
+        trainer_instance: Trainer,
         logits: torch.Tensor,
         teacher_logits: torch.Tensor,
         mask: torch.Tensor,

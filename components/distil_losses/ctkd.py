@@ -107,11 +107,15 @@ class CTKD(DistilLoss):
         teacher_probs = F.softmax(teacher_logits_flat / temp, dim=-1, dtype=torch.float32)
         student_logprobs = F.log_softmax(logits_flat / temp, dim=-1, dtype=torch.float32)
 
-        # Use KLDivLoss for potentially better numerical stability
-        # kl_div expects input log-probabilities and target probabilities
-        kl_loss = F.kl_div(student_logprobs, teacher_probs, reduction='none')
-        kl_loss_masked = (kl_loss.sum(dim=-1) * mask_flat)
-        distil_loss = kl_loss_masked.sum() / mask_flat.sum()
+        # --- Match TAID's manual forward KL calculation --- 
+        inf_mask = torch.isinf(logits_flat)
+        # Calculate -sum(P * log Q)
+        prod_probs = torch.masked_fill(teacher_probs * student_logprobs, inf_mask, 0)
+        x = torch.sum(prod_probs, dim=-1) # Sum over vocab dim
+        # Apply mask and calculate mean loss over non-masked tokens
+        distil_loss = -torch.sum(x * mask_flat) / torch.sum(mask_flat) # Changed dim=0 to remove, sum over all
+        # --- End TAID matching section ---
+
         distil_loss = distil_loss * temp * temp
 
         # TODO: Log temperature?

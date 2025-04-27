@@ -10,27 +10,29 @@ from .base import DistilLoss
 
 
 class SkewForwardKL(DistilLoss):
-    def __init__(self, target_weight: float = 0.1):
+    def __init__(self, skew_beta: float = 0.1):
         super().__init__()
-        self.target_weight = target_weight
+        self.skew_beta = skew_beta
 
     def forward(
         self,
         logits: torch.Tensor,
         teacher_logits: torch.Tensor,
         mask: torch.Tensor,
+        temperature: float = 1.0,
         **kwargs,
     ) -> torch.Tensor:
-        teacher_probs = F.softmax(teacher_logits, dim=-1, dtype=torch.float32)
-        student_probs = F.softmax(logits, dim=-1, dtype=torch.float32)
+        teacher_probs = F.softmax(teacher_logits / temperature, dim=-1, dtype=torch.float32)
+        student_probs = F.softmax(logits / temperature, dim=-1, dtype=torch.float32)
         mixed_probs = (
-            self.target_weight * teacher_probs
-            + (1 - self.target_weight) * student_probs
+            self.skew_beta * teacher_probs
+            + (1 - self.skew_beta) * student_probs
         )
-        mixed_logprobs = torch.log(mixed_probs)
+        mixed_logprobs = torch.log(mixed_probs + 1e-7)
         inf_mask = torch.isinf(logits) | torch.isinf(teacher_logits)
 
         prod_probs = torch.masked_fill(teacher_probs * mixed_logprobs, inf_mask, 0)
         x = torch.sum(prod_probs, dim=-1).view(-1)
-        distil_loss = -torch.sum(x * mask.view(-1), dim=0) / torch.sum(mask.view(-1), dim=0)
+        distil_loss = -torch.sum(x * mask.view(-1)) / torch.sum(mask.view(-1))
+        distil_loss = distil_loss * (temperature ** 2)
         return distil_loss 

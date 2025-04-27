@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 from transformers import Trainer
+from typing import Optional, Tuple, Dict
 from .base import DistilLoss
 from .fkl import forward_kl
 
@@ -79,17 +80,22 @@ class TAID(DistilLoss):
         logits: torch.Tensor,
         teacher_logits: torch.Tensor,
         mask: torch.Tensor,
+        temperature: float = 1.0,
     ):
         # Ensure t is on the correct device
         if self.t.device != logits.device:
             self.t = self.t.to(logits.device)
 
-        p_t = (1 - self.t) * logits.detach() + self.t * teacher_logits
-        p_t = F.softmax(p_t, dim=-1, dtype=torch.float32)
+        # Apply temperature to p_t calculation
+        p_t_logits = (1 - self.t) * logits.detach() + self.t * teacher_logits
+        p_t = F.softmax(p_t_logits / temperature, dim=-1, dtype=torch.float32)
+        
+        # Pass temperature to forward_kl
         distil_loss = forward_kl(
             logits=logits,
             teacher_logits=teacher_logits,
             mask=mask,
+            temperature=temperature,
             teacher_probs=p_t,
         )
         return distil_loss
@@ -100,21 +106,22 @@ class TAID(DistilLoss):
         logits: torch.Tensor,
         teacher_logits: torch.Tensor,
         mask: torch.Tensor,
-        batch: Dict, # Added batch for consistency, though not used directly here
+        batch: Dict,
+        temperature: float = 1.0,
         **kwargs,
-    ) -> torch.Tensor:
-        # compute kd loss
-        loss = self.compute_loss(logits, teacher_logits, mask)
+    ) -> Dict:
+        # compute kd loss, passing temperature
+        loss = self.compute_loss(logits, teacher_logits, mask, temperature=temperature)
 
         # update t
         delta_t = self.update_t(
             loss.detach().clone(),
-            trainer_instance=trainer_instance # Pass the trainer instance
+            trainer_instance=trainer_instance
         )
 
         loss_dict = {
             "distil_loss": loss,
-            "taid_t": self.t.item() if self.t.numel() == 1 else self.t, # Log scalar value
+            "taid_t": self.t.item() if self.t.numel() == 1 else self.t,
             "delta_t": delta_t,
         }
         return loss_dict

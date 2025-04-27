@@ -26,24 +26,31 @@ def dkd_loss(
     temperature=1.0,
     logit_stand=False,
 ):
-    logits_student_in = logits_student_in.view(-1, logits_student_in.size(-1))
-    logits_teacher_in = logits_teacher_in.view(-1, logits_student_in.size(-1))
-    target = target.flatten()
-    mask = mask.flatten()
+    logits_student_flat = logits_student_in.view(-1, logits_student_in.size(-1))
+    logits_teacher_flat = logits_teacher_in.view(-1, logits_teacher_in.size(-1))
+    target_flat = target.flatten()
+    mask_flat = mask.flatten().bool()
 
-    logits_student = normalize(logits_student_in) if logit_stand else logits_student_in
-    logits_teacher = normalize(logits_teacher_in) if logit_stand else logits_teacher_in
+    valid_logits_student = logits_student_flat[mask_flat]
+    valid_logits_teacher = logits_teacher_flat[mask_flat]
+    valid_target = target_flat[mask_flat]
+    num_valid_tokens = mask_flat.sum()
 
-    gt_mask = _get_gt_mask(logits_student, target)
-    other_mask = _get_other_mask(logits_student, target)
+    if num_valid_tokens == 0:
+        return torch.tensor(0.0, device=logits_student_in.device, requires_grad=True)
+
+    logits_student = normalize(valid_logits_student) if logit_stand else valid_logits_student
+    logits_teacher = normalize(valid_logits_teacher) if logit_stand else valid_logits_teacher
+
+    gt_mask = _get_gt_mask(logits_student, valid_target)
+    other_mask = _get_other_mask(logits_student, valid_target)
     pred_student = F.softmax(logits_student / temperature, dim=1)
     pred_teacher = F.softmax(logits_teacher / temperature, dim=1)
     pred_student = cat_mask(pred_student, gt_mask, other_mask)
     pred_teacher = cat_mask(pred_teacher, gt_mask, other_mask)
     log_pred_student = torch.log(pred_student)
-    tckd_loss = F.kl_div(log_pred_student, pred_teacher, reduction="none")
-    tckd_loss = tckd_loss * mask.view(-1).unsqueeze(1)
-    tckd_loss = torch.sum(tckd_loss) * (temperature**2) / target.shape[0]
+    tckd_loss = F.kl_div(log_pred_student, pred_teacher, reduction='sum')
+    tckd_loss = tckd_loss * (temperature**2) / num_valid_tokens
 
     pred_teacher_part2 = F.softmax(
         logits_teacher / temperature - 1000.0 * gt_mask, dim=1
@@ -51,9 +58,9 @@ def dkd_loss(
     log_pred_student_part2 = F.log_softmax(
         logits_student / temperature - 1000.0 * gt_mask, dim=1
     )
-    nckd_loss = F.kl_div(log_pred_student_part2, pred_teacher_part2, reduction="none")
-    nckd_loss = nckd_loss * mask.view(-1).unsqueeze(1)
-    nckd_loss = torch.sum(nckd_loss) * (temperature**2) / target.shape[0]
+    nckd_loss = F.kl_div(log_pred_student_part2, pred_teacher_part2, reduction='sum')
+    nckd_loss = nckd_loss * (temperature**2) / num_valid_tokens
+
     return alpha * tckd_loss + beta * nckd_loss
 
 
@@ -103,15 +110,21 @@ class DKD(DistilLoss):
         if labels is None:
             raise ValueError("DKD loss requires 'labels' in batch dict.")
 
-        valid_token_mask = (labels != self.ignore_index).view(-1)
-        logits_flat = logits.view(-1, logits.size(-1))
-        teacher_logits_flat = teacher_logits.view(-1, teacher_logits.size(-1))
-        labels_flat = labels.view(-1)
+        valid_token_mask = (labels != self.ignore_index)
+        logit_seq_len = logits.size(1)
+        label_seq_len = labels.size(1)
+        if logit_seq_len != label_seq_len:
+            if logit_seq_len > label_seq_len:
+                logits = logits[:, :label_seq_len, :]
+                teacher_logits = teacher_logits[:, :label_seq_len, :]
+            else:
+                raise ValueError(f"Logit sequence length ({logit_seq_len}) < Label sequence length ({label_seq_len}). Check model/data.")
+            valid_token_mask = (labels != self.ignore_index)
 
         return dkd_loss(
-            logits_student_in=logits_flat,
-            logits_teacher_in=teacher_logits_flat,
-            target=labels_flat,
+            logits_student_in=logits,
+            logits_teacher_in=teacher_logits,
+            target=labels,
             mask=valid_token_mask,
             alpha=self.alpha,
             beta=self.beta,

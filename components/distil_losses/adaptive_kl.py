@@ -34,8 +34,11 @@ class AdaptiveKL(DistilLoss):
         gap_distance = torch.abs(teacher_probs - student_probs)
         head_gap = (head_mask * gap_distance).sum(dim=-1).view(-1)
         tail_gap = (~head_mask * gap_distance).sum(dim=-1).view(-1)
-        fkl_weight = head_gap / (head_gap + tail_gap)
-        rkl_weight = tail_gap / (head_gap + tail_gap)
+        denominator = head_gap + tail_gap
+        # Add a small epsilon for numerical stability
+        epsilon = torch.finfo(denominator.dtype).eps # Get smallest representable positive value
+        fkl_weight = head_gap / (denominator + epsilon)
+        rkl_weight = tail_gap / (denominator + epsilon)
 
         # 2. forward kl
         student_logprobs = F.log_softmax(logits, dim=-1, dtype=torch.float32)
