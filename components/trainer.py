@@ -24,6 +24,7 @@ class LogitsTrainer(SFTTrainer):
         self.student_temperature = kwargs.pop("student_temperature", self.temperature)
         self.teacher_temperature = kwargs.pop("teacher_temperature", self.temperature)
         self.skip_eos = kwargs.pop("skip_eos", False)
+        self.loss_kwargs = kwargs.pop("loss_kwargs", None)
         super().__init__(*args, **kwargs)
 
     def compute_loss(
@@ -78,7 +79,6 @@ class LogitsTrainer(SFTTrainer):
             teacher_logits,
             student_outputs.loss,
             inputs=inputs,
-            labels=inputs["labels"] if self.loss_type == "uld" else None,
         )
 
         return (custom_loss, student_outputs) if return_outputs else custom_loss
@@ -190,5 +190,6 @@ class LogitsTrainer(SFTTrainer):
             k=self.k,
             alpha=self.alpha,
             temperature=self.temperature,
+            loss_kwargs=self.loss_kwargs,
             **kwargs,
         )

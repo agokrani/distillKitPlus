@@ -105,6 +105,7 @@ def train(config):
         alpha=config["distillation"]["alpha"],
         loss_type=config["distillation"]["loss_type"],
         k=config["distillation"]["k"],
+        loss_kwargs=config["distillation"].get("loss_kwargs", None)
     )
 
     if teacher_model is not None:

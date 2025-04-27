@@ -245,11 +245,26 @@ def multi_level_ot_loss(
     sample_loss = torch.where(
         valid_length == 0, torch.zeros_like(sample_loss), sample_loss
     )
-    
+    log_loss_weight = None
+    sikhorn_loss_weight = None
+    loss_kwargs = kwargs.get("loss_kwargs", None)
+    if loss_kwargs is not None:
+        log_loss_weight = loss_kwargs.get("log_loss_weight", None)
+        sikhorn_loss_weight = loss_kwargs.get("sikhorn_loss_weight", None)
+    if log_loss_weight is None:
+        print(
+            "Warning: log_loss_weight not provided or is None in loss_kwargs. Using default value of 0.1."
+        )
+        log_loss_weight = 0.1
+    if sikhorn_loss_weight is None:
+        print(
+            "Warning: sikhorn_loss_weight not provided or is None in loss_kwargs. Using default value of 0.1."
+        )
+        sikhorn_loss_weight = 0.1
     sinkorn_loss = Sinkhorn_seq()
-    sample_loss=sample_loss + KL_wo(sorted_teacher,sorted_student) * 0.1 # HARD CODED BAD!!!!!
+    sample_loss=sample_loss + KL_wo(sorted_teacher,sorted_student) * log_loss_weight
     
-    sample_loss=sample_loss.mean() + sinkorn_loss(sorted_teacher,sorted_student) * 0.1 # HARD CODED BAD!!!!!
+    sample_loss=sample_loss.mean() + sinkorn_loss(sorted_teacher,sorted_student) * sikhorn_loss_weight
     
     return sample_loss
     
