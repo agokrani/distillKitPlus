@@ -35,8 +35,8 @@ image = (
     )
     .run_commands("pip install flash-attn --no-build-isolation")
     .pip_install("click")
-    .add_local_dir("scripts", "/root/scripts", copy=True)
-    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
+    .add_local_dir("scripts", "/scripts", copy=True)
+    .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "CUDA_LAUNCH_BLOCKING": "1", "TORCH_USE_CUDA_DSA": "1"})
 )
 
 app = modal.App(name="distill-logits", image=image)
@@ -45,7 +45,9 @@ app = modal.App(name="distill-logits", image=image)
 @app.function(
     gpu="A100-80GB:8",
     timeout=86400,
-    volumes={VOL_MOUNT_PATH: output_vol},
+    volumes={VOL_MOUNT_PATH: output_vol,
+    "/root/.cache/huggingface": hf_cache_vol
+},
     secrets=[modal.Secret.from_name("huggingface-secret")],
 )
 def train_modal(config_str: str):

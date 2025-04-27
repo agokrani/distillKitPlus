@@ -31,9 +31,9 @@ def train(config):
     elif teacher_model is not None:
         teacher_vocab_size = teacher_model.config.vocab_size
     else:
-        if config["distillation"]["loss_type"] == "uld":
+        if config["distillation"]["loss_type"] in ("uld", "multi-ot"):
             raise ValueError(
-                "Please provide teacher vocab size or teacher model in the config file in case of ULD loss."
+                "Please provide teacher vocab size or teacher model in the config file in case of ULD loss or multi-ot loss."
             )
         teacher_vocab_size = student_model.config.vocab_size
 
@@ -46,15 +46,15 @@ def train(config):
     # We need the teacher formatter to format the teacher labels for ULD loss
     # only use ULD loss when doing cross-tokenizer distillation
     teacher_format_func = None
-    if config["distillation"]["loss_type"] == "uld":
+    if config["distillation"]["loss_type"] in ("uld", "multi-ot"):
         teacher_format_func = get_formatter(format_function, teacher_tokenizer)
 
     assert config["distillation"]["student_response_template"] is not None, (
         "Student response template is not provided in the config file."
     )
-    if config["distillation"]["loss_type"] == "uld":
+    if config["distillation"]["loss_type"] in ("uld", "multi-ot"):
         assert config["distillation"]["teacher_response_template"] is not None, (
-            "Teacher response template is not provided in the config file. This is required for ULD loss."
+            "Teacher response template is not provided in the config file. This is required for ULD loss or multi-ot loss."
         )
 
     # Initialize dataset
@@ -70,7 +70,7 @@ def train(config):
                 config["distillation"]["teacher_response_template"],
                 tokenizer=teacher_tokenizer,
             )
-            if config["distillation"]["loss_type"] == "uld"
+            if config["distillation"]["loss_type"] in ("uld", "multi-ot")
             else None
         ),
         format_func=format_func,
@@ -101,15 +101,11 @@ def train(config):
             config["distillation"]["student_response_template"],
             tokenizer=student_tokenizer,
         ),
-        # data_collator=DataCollatorForCompletionOnlyLM(
-        #     #"<|im_start|>assistant\n",
-        #     "<|assistant|>",
-        #     tokenizer=student_tokenizer
-        # ),
         temperature=config["distillation"]["temperature"],
         alpha=config["distillation"]["alpha"],
         loss_type=config["distillation"]["loss_type"],
         k=config["distillation"]["k"],
+        loss_kwargs=config["distillation"].get("loss_kwargs", None)
     )
 
     if teacher_model is not None:
