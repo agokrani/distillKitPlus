@@ -8,7 +8,7 @@ from pathlib import Path
 from components.config import load_config
 
 VOL_MOUNT_PATH = Path("/vol")
-output_vol = modal.Volume.from_name("uld-volume", create_if_missing=True)
+output_vol = modal.Volume.from_name("distillation-volume", create_if_missing=True)
 
 hf_cache_vol = modal.Volume.from_name("huggingface-cache", create_if_missing=True)
 
