@@ -82,6 +82,10 @@ See `config/default_config.json` for a complete example.
 
 We welcome contributions from the community! If you have ideas for improvements, new features, or bug fixes, please feel free to open an issue or submit a pull request.
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=agokrani/distillKitPlus&type=Date)](https://www.star-history.com/#agokrani/distillKitPlus&Date)
+
 ## Contact
 
 For any technical questions or issues, please open an issue in this repository. We appreciate your feedback and support!

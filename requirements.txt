@@ -1,10 +1,11 @@
 accelerate
 datasets
 safetensors
-transformers
-trl==0.12.2
+transformers==4.49.0
+torch==2.5.1
+trl==0.15.2
 hf_transfer
-peft 
+git+https://github.com/huggingface/peft.git
 bitsandbytes
 tensorflow
 tf-keras

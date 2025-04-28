@@ -1,0 +1,67 @@
+{
+    "project_name": "distil-logits",
+    "dataset": {
+        "name": "/vol/bespoke-stratos-17k/dataset.jsonl",
+        "split": "train",
+        "logits_file": null,
+        "num_samples": null,
+        "select_range": null, 
+        "format_function": null
+    },
+    "models": {
+        "teacher": "Qwen/QwQ-32B",
+        "student": "microsoft/Phi-4-mini-instruct",
+        "student_adapter": null,
+        "teacher_adapter": null,
+        "teacher_vocab_size": null,
+        "trust_remote_code": false
+    },
+    "tokenizer": {
+        "max_length": 16384,
+        "chat_template": null,
+        "student_pad_token_id": 199999,
+        "teacher_pad_token_id": 151643
+    },
+    "training": {
+        "output_dir": "/vol/distilled_model",
+        "num_train_epochs": 2,
+        "per_device_train_batch_size": 1,
+        "gradient_accumulation_steps": 1,
+        "save_steps": 100,
+        "logging_steps": 1,
+        "learning_rate": 2e-5,
+        "weight_decay": 0.05,
+        "warmup_ratio": 0.1,
+        "lr_scheduler_type": "cosine",
+        "resume_from_checkpoint": null,
+        "fp16": false,
+        "bf16": true
+    },
+    "distillation": {
+        "temperature": 2.0,
+        "alpha": 0.2,
+        "loss_type": "uld",
+        "student_response_template": "<|assistant|>",
+        "teacher_response_template": "<|im_start|>assistant\n",
+        "k": 100
+    },
+    "model_config": {
+        "use_flash_attention": true
+    },
+    "lora": {
+        "enable_training": true,
+        "r": 16,
+        "alpha": 32,
+        "dropout": 0.05,
+        "bias": "none",
+        "task_type": "CAUSAL_LM",
+        "target_modules": "all-linear"
+    },
+    "quantization": {
+        "enabled": true
+    }, 
+    "execution": {
+        "use_accelerate": true,
+        "accelerate_config": "/vol/accelerate_configs/accelerate_zero3.yaml"
+    }
+}
