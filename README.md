@@ -1,18 +1,32 @@
 # DistillKitPlus
 
-DistillKit is an open-source toolkit for doing knowledge distillation (KLD). The repo was inspired by [acree-ai/DistillKit](https://github.com/arcee-ai/DistillKit/tree/main). The main motivation behind the toolkit was to support offline distillation and PEFT for low computation resource settings. 
+<div align="center">
+
+[![Documentation](https://img.shields.io/badge/Documentation-4285F4?style=for-the-badge&logo=read-the-docs&logoColor=white)](https://distillkitplus.mintlify.app/)
+[![License](https://img.shields.io/badge/License-00A98F?style=for-the-badge&logo=open-source-initiative&logoColor=white)](LICENSE)
+[![GitHub](https://img.shields.io/github/stars/agokrani/distillkitplus?style=for-the-badge&logo=github&color=181717&logoColor=white)](https://github.com/agokrani/distillkitplus)
+
+</div>
+
+DistillKitPlus is an open-source toolkit for doing knowledge distillation (KLD). The repo was inspired by [acree-ai/DistillKit](https://github.com/arcee-ai/DistillKit/tree/main). The main motivation behind the toolkit was to support offline distillation and PEFT for low computation resource settings. 
 
 ![https://arxiv.org/abs/2006.05525](https://i0.wp.com/neptune.ai/wp-content/uploads/2022/10/Knowledge-Distillation_1.png?ssl=1)
 
 # Features
 
-- **Logit Distillation**: Supports same-architecture teacher and student models.
+- **Logit Distillation**: Supports same/cross tokenizer teacher and student models.
 - **Pre-Computed Logits**: Enables memory-efficient training by generating logits in advance.
 - **LoRA Fine-Tuning Integration**: Efficient low-rank adaptation fine-tuning support.
 - **Quantization Support**: 4-bit model quantization for faster inference and reduced memory usage.
 - **Accelerate & DeepSpeed Integration**: Support for distributed training with optimized memory usage.
 
+# Supported Loss Functions
 
+| LOSS TYPE | BEST FOR | SPECIAL REQUIREMENTS |
+|-----------|----------|----------------------|
+| KL Divergence (fkl, kld) | Same tokenizer distillation | None |
+| Universal Logit Distillation (uld) | Cross-tokenizer distillation | Requires teacher_labels |
+| Multi-Level Optimal Transport (multi-ot) | Cross-tokenizer distillation | Requires teacher_labels, additional parameters |
 
 # Installation
 
@@ -52,11 +66,11 @@ Use the following commands with Modal:
 
 - Generate teacher logits:
     ```bash
-    python scripts/modal/generate_logits.py --config config/default_config.json
+    modal run scripts/modal/generate_logits.py --config config/default_config.json
     ```
 - Run distillation:
     ```bash
-    python scripts/modal/distill_logits.py --config config/default_config.json
+    modal run scripts/modal/distill_logits.py --config config/default_config.json
     ```
 
 When using Modal, the accelerate configuration is handled internally based on your config file settings. Just set `"use_accelerate": true` and specify `"accelerate_config"` in the `"execution"` section of your config file.
