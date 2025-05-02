@@ -203,6 +203,18 @@ def multi_level_ot_loss(
         teacher_indices.unsqueeze(-1).expand(B, max_valid, vocab_teacher),
     )
     # Shape of gathered tensors: (B, max_valid, V)
+    
+    student_span_logits.sub_(
+        student_span_logits.mean(dim=-1, keepdim=True)
+    ).div_(
+        student_span_logits.std(dim=-1, keepdim=True, unbiased=False)
+    )
+
+    teacher_span_logits.sub_(
+        teacher_span_logits.mean(dim=-1, keepdim=True)
+    ).div_(
+        teacher_span_logits.std(dim=-1, keepdim=True, unbiased=False)
+    )
 
     # Apply softmax with temperature scaling to FULL logits
     student_span_probs = F.softmax(
@@ -245,6 +257,7 @@ def multi_level_ot_loss(
     sample_loss = torch.where(
         valid_length == 0, torch.zeros_like(sample_loss), sample_loss
     )
+    import pdb;pdb.set_trace()
     log_loss_weight = None
     sikhorn_loss_weight = None
     loss_kwargs = kwargs.get("loss_kwargs", None)
