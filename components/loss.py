@@ -257,7 +257,6 @@ def multi_level_ot_loss(
     sample_loss = torch.where(
         valid_length == 0, torch.zeros_like(sample_loss), sample_loss
     )
-    import pdb;pdb.set_trace()
     log_loss_weight = None
     sikhorn_loss_weight = None
     loss_kwargs = kwargs.get("loss_kwargs", None)
