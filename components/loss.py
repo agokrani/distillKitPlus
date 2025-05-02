@@ -204,17 +204,22 @@ def multi_level_ot_loss(
     )
     # Shape of gathered tensors: (B, max_valid, V)
     
-    student_span_logits.sub_(
-        student_span_logits.mean(dim=-1, keepdim=True)
-    ).div_(
-        student_span_logits.std(dim=-1, keepdim=True, unbiased=False)
-    )
+    student_span_logits = (student_span_logits - student_span_logits.mean(dim=-1, keepdim=True)) \
+                       / (student_span_logits.std(dim=-1, keepdim=True, unbiased=False) + 1e-6)
+    teacher_span_logits = (teacher_span_logits - teacher_span_logits.mean(dim=-1, keepdim=True)) \
+                       / (teacher_span_logits.std(dim=-1, keepdim=True, unbiased=False) + 1e-6)
 
-    teacher_span_logits.sub_(
-        teacher_span_logits.mean(dim=-1, keepdim=True)
-    ).div_(
-        teacher_span_logits.std(dim=-1, keepdim=True, unbiased=False)
-    )
+    # student_span_logits.sub_(
+    #     student_span_logits.mean(dim=-1, keepdim=True)
+    # ).div_(
+    #     student_span_logits.std(dim=-1, keepdim=True, unbiased=False)
+    # )
+
+    # teacher_span_logits.sub_(
+    #     teacher_span_logits.mean(dim=-1, keepdim=True)
+    # ).div_(
+    #     teacher_span_logits.std(dim=-1, keepdim=True, unbiased=False)
+    # )
 
     # Apply softmax with temperature scaling to FULL logits
     student_span_probs = F.softmax(
