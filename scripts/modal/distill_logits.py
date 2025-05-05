@@ -15,10 +15,10 @@ hf_cache_vol = modal.Volume.from_name("huggingface-cache", create_if_missing=Tru
 image = (
     modal.Image.from_registry("nvidia/cuda:12.4.0-devel-ubuntu22.04", add_python="3.11")
     .apt_install("git")
+    .run_commands("pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124")
     .pip_install(
         "accelerate",
-        "transformers==4.49.0",
-        "torch==2.5.1",
+        "transformers==4.51.3",
         "datasets",
         "tensorboard",
         "trl==0.15.2",
@@ -43,7 +43,7 @@ app = modal.App(name="distill-logits", image=image)
 
 
 @app.function(
-    gpu="A100-80GB:8",
+    gpu="H100:8",
     timeout=86400,
     volumes={VOL_MOUNT_PATH: output_vol,
     "/root/.cache/huggingface": hf_cache_vol

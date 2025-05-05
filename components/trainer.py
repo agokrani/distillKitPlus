@@ -72,7 +72,6 @@ class LogitsTrainer(SFTTrainer):
         teacher_logits = self._align_sequence_length(
             teacher_logits, student_outputs.logits
         )
-
         # Compute combined loss
         custom_loss = self._compute_distillation_loss(
             student_outputs.logits,
@@ -80,7 +79,10 @@ class LogitsTrainer(SFTTrainer):
             student_outputs.loss,
             inputs=inputs,
         )
-
+        if model.training and self.args.gradient_accumulation_steps > 1:
+            # Scale loss for gradient accumulation
+            custom_loss = custom_loss / self.args.gradient_accumulation_steps
+        
         return (custom_loss, student_outputs) if return_outputs else custom_loss
 
     def _compute_teacher_logits(self, inputs: Dict[str, Any]) -> Tensor:
